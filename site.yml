@@ -1,0 +1,141 @@
+---
+- name: Install
+  hosts: all
+  remote_user: root
+  #become: true
+  vars:
+    admin_keys: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUpqpqIu3HilPpFzjizqSo5LJM3COj2NxzROgyZNYmcDMln8O2fLUDmiloq2FllkwYpa5Fb9PjaocPnQV9JtgZz5PdiOe6BorM/YYINI9WzonvbOaXs4ZHR8JDxVvm7HLXOR+TZ3Zpz2Lu/D9Ssp0YsS5+Ba1xlL1v4f6GFleoIFTOuEL/8UrEaakMQWGZ8t6QpuLvZBm8ERpbfrZHB5+TtFvmXEMNILy49xqR+geA/Ybj3FTvO+WpglP86zdJCqqO1VR1d41EkJQR449oWCC4zJfCNL0o7s6CG2hRyTUwJk78t4rKoDSgLtBDEO3PvXF/VimqHH8R5MjICLccaQh eldar@eldar-pc
+    letsencrypt_email: erlain@gmail.com
+    domain_name: eldar.ga
+  
+  tasks:
+    - name: Add admin keys
+      authorized_key: 
+        user: root
+        state: present
+        key: "{{ item }}"
+      with_items: "{{ admin_keys }}"
+    
+    - name: Update and upgrade
+      apt:
+        update_cache: yes
+        #upgrade: yes
+
+    - name: Get docker key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repo
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable
+        state: present
+        update_cache: no
+        filename: docker.list
+
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Download docker-compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/1.25.4/docker-compose-linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: +x
+    
+    - name: Install pip3
+      apt:
+        name: python3-pip
+        state: present
+    
+    - name: Install Docker SDK for Python
+      pip:
+        name: 
+          - docker
+          - docker_compose
+        state: present
+
+    - name: Import an image
+      docker_image:
+        name: etursunbaev/home-work:01
+        state: present
+    
+    - name: Upload docker-compose file
+      template:
+        src: docker-compose.yml
+        dest: ~/
+    
+#    - name: Create docker net
+#      docker_network:
+#        name: network
+
+    - name: Run docker-compose
+      docker_compose:
+        #project_name: "{{ project_name }}"
+        project_src: ~/
+        build: no
+        state: present
+      tags: dc
+
+    - name: Install nginx
+      apt: 
+        name: nginx
+        state: latest
+
+    - name: install letsencrypt
+      apt: 
+        name: letsencrypt 
+        state: latest
+
+    - name: create letsencrypt directory
+      file: 
+        path: /var/www/letsencrypt 
+        state: directory
+
+    - name: Remove default nginx config
+      file: 
+        path: /etc/nginx/sites-enabled/default 
+        state: absent
+
+    - name: Install system nginx config
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+
+    - name: Install nginx site for letsencrypt requests
+      template:
+        src: templates/nginx-http.j2
+        dest: /etc/nginx/sites-enabled/http
+
+    - name: Restart nginx to activate letsencrypt site
+      systemd: 
+        name: nginx.service
+        state: restarted
+
+    - name: Create letsencrypt certificate
+      shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }}
+      args:
+        creates: /etc/letsencrypt/live/{{ domain_name }}
+
+    - name: Generate dhparams
+      shell: openssl dhparam -out /etc/nginx/dhparams.pem 2048
+      args:
+        creates: /etc/nginx/dhparams.pem
+
+    - name: Install nginx site for specified site
+      template:
+        src: templates/nginx-le.j2
+        dest: /etc/nginx/sites-enabled/le
+
+    - name: Reload nginx to activate specified site
+      systemd: 
+        name: nginx.service
+        state: reloaded
+
+    - name: Add letsencrypt cronjob for cert renewal
+      cron:
+        name: letsencrypt_renewal
+        special_time: weekly
+        job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }} && service nginx reload

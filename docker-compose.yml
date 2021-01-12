@@ -1,0 +1,28 @@
+version: '3.3'
+
+#networks:
+#  default:
+#    external:
+#      name: mynet
+
+services:
+
+  flatris:
+    restart: always
+    image: etursunbaev/home-work:01
+    hostname: flatris
+    tty: true
+    stdin_open: true
+   # ports:
+   #   - "80:3000"
+    networks:
+      mynet:
+        ipv4_address: 10.5.0.3
+
+networks:
+  mynet:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/16
+         gateway: 10.5.0.1

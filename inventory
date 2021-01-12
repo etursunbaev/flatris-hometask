@@ -1,0 +1,1 @@
+flatris ansible_host=18.224.22.246 project_name=timelysoft container_ipv4_address=10.5.0.3 letsencrypt_email=erlain@gmail.com domain_name=eldar.ga ansible_python_interpreter=/usr/bin/python3
